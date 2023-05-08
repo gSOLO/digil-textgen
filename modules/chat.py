@@ -3,6 +3,7 @@ import base64
 import copy
 import io
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,11 @@ def replace_all(text, dic):
 
 
 def generate_chat_prompt(user_input, state, **kwargs):
+    # Check if an extension is sending its modified history.
+    # If not, use the regular history
+    history = state['history'] if 'history' in state else shared.history['internal']
+
+    # Define some variables
     impersonate = kwargs['impersonate'] if 'impersonate' in kwargs else False
     _continue = kwargs['_continue'] if '_continue' in kwargs else False
     also_return_rows = kwargs['also_return_rows'] if 'also_return_rows' in kwargs else False
@@ -60,14 +66,14 @@ def generate_chat_prompt(user_input, state, **kwargs):
     bot_turn_stripped = replace_all(bot_turn.split('<|bot-message|>')[0], replacements)
 
     # Building the prompt
-    i = len(shared.history['internal']) - 1
+    i = len(history) - 1
     while i >= 0 and len(encode(''.join(rows))[0]) < max_length:
-        if _continue and i == len(shared.history['internal']) - 1:
-            rows.insert(1, bot_turn_stripped + shared.history['internal'][i][1].strip())
+        if _continue and i == len(history) - 1:
+            rows.insert(1, bot_turn_stripped + history[i][1].strip())
         else:
-            rows.insert(1, bot_turn.replace('<|bot-message|>', shared.history['internal'][i][1].strip()))
+            rows.insert(1, bot_turn.replace('<|bot-message|>', history[i][1].strip()))
 
-        string = shared.history['internal'][i][0]
+        string = history[i][0]
         if string not in ['', '<|BEGIN-VISIBLE-CHAT|>']:
             rows.insert(1, replace_all(user_turn, {'<|user-message|>': string.strip(), '<|round|>': str(i)}))
 
@@ -79,7 +85,7 @@ def generate_chat_prompt(user_input, state, **kwargs):
     elif not _continue:
         # Adding the user message
         if len(user_input) > 0:
-            rows.append(replace_all(user_turn, {'<|user-message|>': user_input.strip(), '<|round|>': str(len(shared.history["internal"]))}))
+            rows.append(replace_all(user_turn, {'<|user-message|>': user_input.strip(), '<|round|>': str(len(history))}))
 
         # Adding the Character prefix
         rows.append(apply_extensions("bot_prefix", bot_turn_stripped.rstrip(' ')))
@@ -138,7 +144,7 @@ def extract_message_from_reply(reply, state):
 
 def chatbot_wrapper(text, state, regenerate=False, _continue=False):
     if shared.model_name == 'None' or shared.model is None:
-        print("No model is loaded! Select one in the Model tab.")
+        logging.error("No model is loaded! Select one in the Model tab.")
         yield shared.history['visible']
         return
 
@@ -216,7 +222,7 @@ def chatbot_wrapper(text, state, regenerate=False, _continue=False):
 
 def impersonate_wrapper(text, state):
     if shared.model_name == 'None' or shared.model is None:
-        print("No model is loaded! Select one in the Model tab.")
+        logging.error("No model is loaded! Select one in the Model tab.")
         yield ''
         return
 
@@ -454,9 +460,18 @@ def load_character(character, name1, name2, mode):
 
         file_contents = open(filepath, 'r', encoding='utf-8').read()
         data = json.loads(file_contents) if extension == "json" else yaml.safe_load(file_contents)
-        name2 = data['name'] if 'name' in data else data['char_name']
-        if 'your_name' in data and data['your_name'] != '':
-            name1 = data['your_name']
+
+        # Finding the bot's name
+        for k in ['name', 'bot', '<|bot|>', 'char_name']:
+            if k in data and data[k] != '':
+                name2 = data[k]
+                break
+
+        # Find the user name (if any)
+        for k in ['your_name', 'user', '<|user|>']:
+            if k in data and data[k] != '':
+                name1 = data[k]
+                break
         else:
             name1 = shared.settings['name1']
 
@@ -523,7 +538,7 @@ def upload_character(json_file, img, tavern=False):
         img = Image.open(io.BytesIO(img))
         img.save(Path(f'characters/{outfile_name}.png'))
 
-    print(f'New character saved to "characters/{outfile_name}.json".')
+    logging.info(f'New character saved to "characters/{outfile_name}.json".')
     return outfile_name
 
 
@@ -547,6 +562,6 @@ def upload_your_profile_picture(img, name1, name2, mode):
     else:
         img = make_thumbnail(img)
         img.save(Path('cache/pfp_me.png'))
-        print('Profile picture saved to "cache/pfp_me.png"')
+        logging.info('Profile picture saved to "cache/pfp_me.png"')
 
     return chat_html_wrapper(shared.history['visible'], name1, name2, mode, reset_cache=True)
