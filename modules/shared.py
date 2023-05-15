@@ -1,5 +1,6 @@
 import argparse
 import logging
+from collections import OrderedDict
 from pathlib import Path
 
 import yaml
@@ -53,12 +54,13 @@ settings = {
     'mode': 'chat',
     'chat_style': 'cai-chat',
     'instruction_template': 'None',
+    'chat-instruct_command': 'Continue the chat dialogue below. Write a single reply for the character "<|character|>".\n\n<|prompt|>',
     'chat_prompt_size': 2048,
     'chat_prompt_size_min': 0,
     'chat_prompt_size_max': 2048,
     'chat_generation_attempts': 1,
     'chat_generation_attempts_min': 1,
-    'chat_generation_attempts_max': 5,
+    'chat_generation_attempts_max': 10,
     'default_extensions': [],
     'chat_default_extensions': ["gallery"],
     'presets': {
@@ -121,6 +123,7 @@ parser.add_argument('--threads', type=int, default=0, help='Number of threads to
 parser.add_argument('--n_batch', type=int, default=512, help='Maximum number of prompt tokens to batch together when calling llama_eval.')
 parser.add_argument('--no-mmap', action='store_true', help='Prevent mmap from being used.')
 parser.add_argument('--mlock', action='store_true', help='Force the system to keep the model in RAM.')
+parser.add_argument('--n-gpu-layers', type=int, default=0, help='Number of layers to offload to the GPU.')
 
 # GPTQ
 parser.add_argument('--wbits', type=int, default=0, help='Load a pre-quantized model with specified precision in bits. 2, 3, 4 and 8 are supported.')
@@ -200,7 +203,7 @@ def is_chat():
     return args.chat
 
 
-# Loading model-specific settings (default)
+# Loading model-specific settings
 with Path(f'{args.model_dir}/config.yaml') as p:
     if p.exists():
         model_config = yaml.safe_load(open(p, 'r').read())
@@ -216,3 +219,5 @@ with Path(f'{args.model_dir}/config-user.yaml') as p:
                 model_config[k].update(user_config[k])
             else:
                 model_config[k] = user_config[k]
+
+model_config = OrderedDict(model_config)

@@ -146,12 +146,13 @@ def load_prompt(fname):
             }
 
             output += utils.replace_all(data['turn_template'].split('<|bot-message|>')[0], replacements)
-            return output
+            return output.rstrip(' ')
     else:
         with open(Path(f'prompts/{fname}.txt'), 'r', encoding='utf-8') as f:
             text = f.read()
             if text[-1] == '\n':
                 text = text[:-1]
+
             return text
 
 
@@ -264,11 +265,12 @@ def save_model_settings(model, state):
         else:
             user_config = {}
 
-        if model not in user_config:
-            user_config[model] = {}
+        model_regex = model + '$'  # For exact matches
+        if model_regex not in user_config:
+            user_config[model_regex] = {}
 
         for k in ui.list_model_elements():
-            user_config[model][k] = state[k]
+            user_config[model_regex][k] = state[k]
 
         with open(p, 'w') as f:
             f.write(yaml.dump(user_config))
@@ -512,7 +514,6 @@ def create_interface():
             shared.gradio['interface_state'] = gr.State({k: None for k in shared.input_elements})
             shared.gradio['Chat input'] = gr.State()
             shared.gradio['dummy'] = gr.State()
-            is_instruct = shared.settings['mode'] == 'instruct'
 
             with gr.Tab('Text generation', elem_id='main'):
                 shared.gradio['display'] = gr.HTML(value=chat_html_wrapper(shared.history['visible'], shared.settings['name1'], shared.settings['name2'], 'chat', 'cai-chat'))
@@ -538,32 +539,37 @@ def create_interface():
                     shared.gradio['Clear history-confirm'] = gr.Button('Confirm', variant='stop', visible=False)
                     shared.gradio['Clear history-cancel'] = gr.Button('Cancel', visible=False)
 
-                with gr.Row():
-                    with gr.Column():
-                        shared.gradio['mode'] = gr.Radio(choices=['chat', 'instruct'], value=shared.settings['mode'] if shared.settings['mode'] in ['chat', 'instruct'] else 'chat', label='Mode')
-                    with gr.Column():
-                        shared.gradio['instruction_template'] = gr.Dropdown(choices=utils.get_available_instruction_templates(), label='Instruction template', value='None', visible=is_instruct, info='Change this according to the model/LoRA that you are using.')
-                        shared.gradio['chat_style'] = gr.Dropdown(choices=utils.get_available_chat_styles(), label='Chat style', value=shared.settings['chat_style'], visible=not is_instruct)
+                shared.gradio['mode'] = gr.Radio(choices=['chat', 'chat-instruct', 'instruct'], value=shared.settings['mode'] if shared.settings['mode'] in ['chat', 'instruct', 'chat-instruct'] else 'chat', label='Mode', info='Select the appropriate instruction template under Chat settings > Instruction template when in "instruct" or "chat-instruct" mode.')
+                shared.gradio['chat_style'] = gr.Dropdown(choices=utils.get_available_chat_styles(), label='Chat style', value=shared.settings['chat_style'], visible=shared.settings['mode'] != 'instruct')
 
-            with gr.Tab('Character', elem_id='chat-settings'):
-                with gr.Row():
-                    with gr.Column(scale=8):
-                        shared.gradio['name1'] = gr.Textbox(value=shared.settings['name1'], lines=1, label='Your name', visible=not is_instruct)
-                        shared.gradio['name1_instruct'] = gr.Textbox(value=shared.settings['name1'], lines=1, label='Your name', visible=is_instruct)
-                        shared.gradio['name2'] = gr.Textbox(value=shared.settings['name2'], lines=1, label='Character\'s name', visible=not is_instruct)
-                        shared.gradio['name2_instruct'] = gr.Textbox(value=shared.settings['name2'], lines=1, label='Character\'s name', visible=is_instruct)
-                        shared.gradio['greeting'] = gr.Textbox(value=shared.settings['greeting'], lines=4, label='Greeting', visible=not is_instruct)
-                        shared.gradio['context'] = gr.Textbox(value=shared.settings['context'], lines=4, label='Context', visible=not is_instruct)
-                        shared.gradio['context_instruct'] = gr.Textbox(value=shared.settings['context'], lines=4, label='Context', visible=is_instruct)
-                        shared.gradio['turn_template'] = gr.Textbox(value=shared.settings['turn_template'], lines=1, label='Turn template', info='Used to precisely define the placement of spaces and new line characters in instruction prompts.', visible=is_instruct)
+            with gr.Tab('Chat settings', elem_id='chat-settings'):
+                with gr.Tab('Character'):
+                    gr.Markdown('Used in chat and chat-instruct modes.')
+                    with gr.Row():
+                        shared.gradio['character_menu'] = gr.Dropdown(choices=utils.get_available_characters(), label='Character', elem_id='character-menu')
+                        ui.create_refresh_button(shared.gradio['character_menu'], lambda: None, lambda: {'choices': utils.get_available_characters()}, 'refresh-button')
 
-                    with gr.Column(scale=1):
-                        shared.gradio['character_picture'] = gr.Image(label='Character picture', type='pil')
-                        shared.gradio['your_picture'] = gr.Image(label='Your picture', type='pil', value=Image.open(Path('cache/pfp_me.png')) if Path('cache/pfp_me.png').exists() else None)
+                    with gr.Row():
+                        with gr.Column(scale=8):
+                            shared.gradio['name1'] = gr.Textbox(value=shared.settings['name1'], lines=1, label='Your name')
+                            shared.gradio['name2'] = gr.Textbox(value=shared.settings['name2'], lines=1, label='Character\'s name')
+                            shared.gradio['context'] = gr.Textbox(value=shared.settings['context'], lines=4, label='Context')
+                            shared.gradio['greeting'] = gr.Textbox(value=shared.settings['greeting'], lines=4, label='Greeting')
 
-                with gr.Row():
-                    shared.gradio['character_menu'] = gr.Dropdown(choices=utils.get_available_characters(), label='Character', elem_id='character-menu', interactive=not is_instruct)
-                    ui.create_refresh_button(shared.gradio['character_menu'], lambda: None, lambda: {'choices': utils.get_available_characters()}, 'refresh-button')
+                        with gr.Column(scale=1):
+                            shared.gradio['character_picture'] = gr.Image(label='Character picture', type='pil')
+                            shared.gradio['your_picture'] = gr.Image(label='Your picture', type='pil', value=Image.open(Path('cache/pfp_me.png')) if Path('cache/pfp_me.png').exists() else None)
+
+                with gr.Tab('Instruction template'):
+                    gr.Markdown('Used in instruct and chat-instruct modes.')
+                    shared.gradio['instruction_template'] = gr.Dropdown(choices=utils.get_available_instruction_templates(), label='Instruction template', value='None', info='Change this according to the model/LoRA that you are using.')
+                    shared.gradio['name1_instruct'] = gr.Textbox(value='', lines=2, label='Your name')
+                    shared.gradio['name2_instruct'] = gr.Textbox(value='', lines=1, label='Character\'s name')
+                    shared.gradio['context_instruct'] = gr.Textbox(value='', lines=4, label='Context')
+                    shared.gradio['turn_template'] = gr.Textbox(value='', lines=1, label='Turn template', info='Used to precisely define the placement of spaces and new line characters in instruction prompts.')
+
+                    with gr.Row():
+                        shared.gradio['chat-instruct_command'] = gr.Textbox(value=shared.settings['chat-instruct_command'], lines=4, label='Command for chat-instruct mode', info='<|character|> gets replaced by the bot name, and <|prompt|> gets replaced by the regular chat prompt.')
 
                 with gr.Row():
                     with gr.Tab('Chat history'):
@@ -601,7 +607,7 @@ def create_interface():
                             shared.gradio['chat_prompt_size'] = gr.Slider(minimum=shared.settings['chat_prompt_size_min'], maximum=shared.settings['chat_prompt_size_max'], step=1, label='Maximum prompt size in tokens', value=shared.settings['chat_prompt_size'])
 
                         with gr.Column():
-                            shared.gradio['chat_generation_attempts'] = gr.Slider(minimum=shared.settings['chat_generation_attempts_min'], maximum=shared.settings['chat_generation_attempts_max'], value=shared.settings['chat_generation_attempts'], step=1, label='Generation attempts (for longer replies)')
+                            shared.gradio['chat_generation_attempts'] = gr.Slider(minimum=shared.settings['chat_generation_attempts_min'], maximum=shared.settings['chat_generation_attempts_max'], value=shared.settings['chat_generation_attempts'], step=1, label='Generation attempts (for longer replies)', info='New generations will be called until either this number is reached or no new content is generated between two iterations')
                             shared.gradio['stop_at_newline'] = gr.Checkbox(value=shared.settings['stop_at_newline'], label='Stop generating at new line character')
 
                 create_settings_menus(default_preset)
@@ -704,7 +710,7 @@ def create_interface():
             bool_active = [k for k in bool_list if vars(shared.args)[k]]
 
             gr.Markdown("*Experimental*")
-            shared.gradio['interface_modes_menu'] = gr.Dropdown(choices=modes, value=current_mode, label="Mode")
+            shared.gradio['interface_modes_menu'] = gr.Dropdown(choices=modes, value=current_mode, label="Mode", info='For instruct and chat-instruct modes, make sure to select a template that matches the current model in the "Chat settings" tab.')
             shared.gradio['extensions_menu'] = gr.CheckboxGroup(choices=utils.get_available_extensions(), value=shared.args.extensions, label="Available extensions")
             shared.gradio['bool_menu'] = gr.CheckboxGroup(choices=bool_list, value=bool_active, label="Boolean command-line flags")
             shared.gradio['reset_interface'] = gr.Button("Apply and restart the interface")
@@ -781,13 +787,13 @@ def create_interface():
                 chat.redraw_html, shared.reload_inputs, shared.gradio['display'])
 
             shared.gradio['mode'].change(
-                lambda x: [gr.update(visible=x == 'instruct')] * 5 + [gr.update(visible=x != 'instruct')] * 5, shared.gradio['mode'], [shared.gradio[k] for k in ['instruction_template', 'name1_instruct', 'name2_instruct', 'context_instruct', 'turn_template', 'name1', 'name2', 'context', 'greeting', 'chat_style']], show_progress=False).then(
-                lambda x: gr.update(interactive=x != 'instruct'), shared.gradio['mode'], shared.gradio['character_menu']).then(
+                lambda x: gr.update(visible=x != 'instruct'), shared.gradio['mode'], shared.gradio['chat_style'], show_progress=False).then(
                 chat.redraw_html, shared.reload_inputs, shared.gradio['display'])
+
 
             shared.gradio['chat_style'].change(chat.redraw_html, shared.reload_inputs, shared.gradio['display'])
             shared.gradio['instruction_template'].change(
-                chat.load_character, [shared.gradio[k] for k in ['instruction_template', 'name1_instruct', 'name2_instruct', 'mode']], [shared.gradio[k] for k in ['name1_instruct', 'name2_instruct', 'dummy', 'dummy', 'context_instruct', 'turn_template']])
+                partial(chat.load_character, instruct=True), [shared.gradio[k] for k in ['instruction_template', 'name1_instruct', 'name2_instruct']], [shared.gradio[k] for k in ['name1_instruct', 'name2_instruct', 'dummy', 'dummy', 'context_instruct', 'turn_template']])
 
             shared.gradio['upload_chat_history'].upload(
                 chat.load_history, [shared.gradio[k] for k in ['upload_chat_history', 'name1', 'name2']], None).then(
@@ -804,7 +810,7 @@ def create_interface():
             shared.gradio['download_button'].click(lambda x: chat.save_history(x, timestamp=True), shared.gradio['mode'], shared.gradio['download'])
             shared.gradio['Upload character'].click(chat.upload_character, [shared.gradio['upload_json'], shared.gradio['upload_img_bot']], [shared.gradio['character_menu']])
             shared.gradio['character_menu'].change(
-                chat.load_character, [shared.gradio[k] for k in ['character_menu', 'name1', 'name2', 'mode']], [shared.gradio[k] for k in ['name1', 'name2', 'character_picture', 'greeting', 'context', 'dummy']]).then(
+                partial(chat.load_character, instruct=False), [shared.gradio[k] for k in ['character_menu', 'name1', 'name2']], [shared.gradio[k] for k in ['name1', 'name2', 'character_picture', 'greeting', 'context', 'dummy']]).then(
                 chat.redraw_html, shared.reload_inputs, shared.gradio['display'])
 
             shared.gradio['upload_img_tavern'].upload(chat.upload_tavern_character, [shared.gradio['upload_img_tavern'], shared.gradio['name1'], shared.gradio['name2']], [shared.gradio['character_menu']])
@@ -877,11 +883,25 @@ if __name__ == "__main__":
         settings_file = Path(shared.args.settings)
     elif Path('settings.json').exists():
         settings_file = Path('settings.json')
+
     if settings_file is not None:
         logging.info(f"Loading settings from {settings_file}...")
         new_settings = json.loads(open(settings_file, 'r').read())
         for item in new_settings:
             shared.settings[item] = new_settings[item]
+
+    # Set default model settings based on settings.json
+    shared.model_config['.*'] = {
+        'wbits': 'None',
+        'model_type': 'None',
+        'groupsize': 'None',
+        'pre_layer': 0,
+        'mode': shared.settings['mode'],
+        'skip_special_tokens': shared.settings['skip_special_tokens'],
+        'custom_stopping_strings': shared.settings['custom_stopping_strings'],
+    }
+
+    shared.model_config.move_to_end('.*', last=False)  # Move to the beginning
 
     # Default extensions
     extensions_module.available_extensions = utils.get_available_extensions()

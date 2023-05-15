@@ -70,7 +70,7 @@ def deduce_template():
             .replace('<|user|>', instruct.get('user', ''))\
             .replace('<|bot|>', instruct.get('bot', ''))\
             .replace('<|user-message|>', '{instruction}\n{input}')
-        return instruct.get('context', '') + template[:template.find('<|bot-message|>')]
+        return instruct.get('context', '') + template[:template.find('<|bot-message|>')].rstrip(' ')
     except:
         return default_template
 
@@ -514,11 +514,15 @@ class Handler(BaseHTTPRequestHandler):
             if debug:
                 print({'edit_template': edit_task, 'req_params': req_params, 'token_count': token_count})
             
-            generator = generate_reply(edit_task, req_params, stopping_strings=standard_stopping_strings, is_chat=True)
+            generator = generate_reply(edit_task, req_params, stopping_strings=standard_stopping_strings, is_chat=False)
 
             answer = ''
             for a in generator:
                 answer = a
+
+            # some reply's have an extra leading space to fit the instruction template, just clip it off from the reply.
+            if edit_task[-1] != '\n' and answer and answer[0] == ' ':
+                answer = answer[1:]
 
             completion_token_count = len(encode(answer)[0])
 
