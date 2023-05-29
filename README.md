@@ -13,7 +13,7 @@ A gradio web UI for running Large Language Models like LLaMA, llama.cpp, GPT-J, 
 * Chat mode for conversation and role-playing
 * Instruct mode compatible with various formats, including Alpaca, Vicuna, Open Assistant, Dolly, Koala, ChatGLM, MOSS, RWKV-Raven, Galactica, StableLM, WizardLM, Baize, Ziya, Chinese-Vicuna, MPT, INCITE, Wizard Mega, KoAlpaca, Vigogne, Bactrian, h2o, and OpenBuddy
 * [Multimodal pipelines, including LLaVA and MiniGPT-4](https://github.com/oobabooga/text-generation-webui/tree/main/extensions/multimodal)
-* Markdown output for [GALACTICA](https://github.com/paperswithcode/galai), including LaTeX rendering
+* Markdown output with LaTeX rendering, to use for instance with [GALACTICA](https://github.com/paperswithcode/galai)
 * Nice HTML output for GPT-4chan
 * [Custom chat characters](docs/Chat-mode.md)
 * Advanced chat features (send images, get audio responses with TTS)
@@ -24,7 +24,7 @@ A gradio web UI for running Large Language Models like LLaMA, llama.cpp, GPT-J, 
 * [LoRA (loading and training)](docs/Using-LoRAs.md)
 * [llama.cpp](docs/llama.cpp-models.md)
 * [RWKV model](docs/RWKV-model.md)
-* 8-bit mode
+* 8-bit and 4-bit through bitsandbytes
 * Layers splitting across GPU(s), CPU, and disk
 * CPU mode
 * [FlexGen](docs/FlexGen.md)
@@ -35,6 +35,5 @@ A gradio web UI for running Large Language Models like LLaMA, llama.cpp, GPT-J, 
 ## Credits
 
 - Gradio dropdown menu refresh button, code for reloading the interface: https://github.com/AUTOMATIC1111/stable-diffusion-webui
-- Verbose preset: Anonymous 4chan user.
 - NovelAI and KoboldAI presets: https://github.com/KoboldAI/KoboldAI-Client/wiki/Settings-Presets
 - Code for early stopping in chat mode, code for some of the sliders: https://github.com/PygmalionAI/gradio-ui/
