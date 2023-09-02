@@ -64,59 +64,19 @@ python server.py --autogptq --gpu-memory 3000MiB 6000MiB --model model_name
 
 ### Using LoRAs with AutoGPTQ
 
-Not supported yet.
+Works fine for a single LoRA.
 
 ## GPTQ-for-LLaMa
 
 GPTQ-for-LLaMa is the original adaptation of GPTQ for the LLaMA model. It was made possible by [@qwopqwop200](https://github.com/qwopqwop200/GPTQ-for-LLaMa): https://github.com/qwopqwop200/GPTQ-for-LLaMa
 
-Different branches of GPTQ-for-LLaMa are currently available, including:
-
-| Branch | Comment |
-|----|----|
-| [Old CUDA branch (recommended)](https://github.com/oobabooga/GPTQ-for-LLaMa/) | The fastest branch, works on Windows and Linux. |
-| [Up-to-date triton branch](https://github.com/qwopqwop200/GPTQ-for-LLaMa) | Slightly more precise than the old CUDA branch from 13b upwards, significantly more precise for 7b. 2x slower for small context size and only works on Linux. |
-| [Up-to-date CUDA branch](https://github.com/qwopqwop200/GPTQ-for-LLaMa/tree/cuda) | As precise as the up-to-date triton branch, 10x slower than the old cuda branch for small context size. |
-
-Overall, I recommend using the old CUDA branch. It is included by default in the one-click-installer for this web UI.
-
-### Installation
-
-Start by cloning GPTQ-for-LLaMa into your `text-generation-webui/repositories` folder:
-
-```
-mkdir repositories
-cd repositories
-git clone https://github.com/oobabooga/GPTQ-for-LLaMa.git -b cuda
-```
-
-If you want to you to use the up-to-date CUDA or triton branches instead of the old CUDA branch, use these commands:
-
-```
-git clone https://github.com/qwopqwop200/GPTQ-for-LLaMa.git -b cuda
-```
-
-```
-git clone https://github.com/qwopqwop200/GPTQ-for-LLaMa.git -b triton
-```
-
-Next you need to install the CUDA extensions. You can do that either by installing the precompiled wheels, or by compiling the wheels yourself.
+A Python package containing both major CUDA versions of GPTQ-for-LLaMa is used to simplify installation and compatibility: https://github.com/jllllll/GPTQ-for-LLaMa-CUDA
 
 ### Precompiled wheels
 
-Kindly provided by our friend jllllll: https://github.com/jllllll/GPTQ-for-LLaMa-Wheels
+Kindly provided by our friend jllllll: https://github.com/jllllll/GPTQ-for-LLaMa-CUDA/releases
 
-Windows:
-
-```
-pip install https://github.com/jllllll/GPTQ-for-LLaMa-Wheels/raw/main/quant_cuda-0.0.0-cp310-cp310-win_amd64.whl
-```
-
-Linux:
-
-```
-pip install https://github.com/jllllll/GPTQ-for-LLaMa-Wheels/raw/Linux-x64/quant_cuda-0.0.0-cp310-cp310-linux_x86_64.whl
-```
+Wheels are included in requirements.txt and are installed with the webui on supported systems.
 
 ### Manual installation
 
@@ -124,30 +84,42 @@ pip install https://github.com/jllllll/GPTQ-for-LLaMa-Wheels/raw/Linux-x64/quant
 
 ```
 conda activate textgen
-conda install -c conda-forge cudatoolkit-dev
+conda install cuda -c nvidia/label/cuda-11.7.1
 ```
 
 The command above takes some 10 minutes to run and shows no progress bar or updates along the way.
 
-You are also going to need to have a C++ compiler installed. On Linux, `sudo apt install build-essential` or equivalent is enough.
+You are also going to need to have a C++ compiler installed. On Linux, `sudo apt install build-essential` or equivalent is enough. On Windows, Visual Studio or Visual Studio Build Tools is required.
 
-If you're using an older version of CUDA toolkit (e.g. 11.7) but the latest version of `gcc` and `g++` (12.0+), you should downgrade with: `conda install -c conda-forge gxx==11.3.0`. Kernel compilation will fail otherwise.
+If you're using an older version of CUDA toolkit (e.g. 11.7) but the latest version of `gcc` and `g++` (12.0+) on Linux, you should downgrade with: `conda install -c conda-forge gxx==11.3.0`. Kernel compilation will fail otherwise.
 
 #### Step 2: compile the CUDA extensions
 
 ```
-cd repositories/GPTQ-for-LLaMa
-python setup_cuda.py install
+python -m pip install git+https://github.com/jllllll/GPTQ-for-LLaMa-CUDA -v
 ```
 
 ### Getting pre-converted LLaMA weights
 
-These are models that you can simply download and place in your `models` folder.
+* Direct download (recommended):
 
-* Converted without `group-size` (better for the 7b model): https://github.com/oobabooga/text-generation-webui/pull/530#issuecomment-1483891617
-* Converted with `group-size` (better from 13b upwards): https://github.com/oobabooga/text-generation-webui/pull/530#issuecomment-1483941105 
+https://huggingface.co/Neko-Institute-of-Science/LLaMA-7B-4bit-128g
 
-⚠️ The tokenizer files in the sources above may be outdated. Make sure to obtain the universal LLaMA tokenizer as described [here](https://github.com/oobabooga/text-generation-webui/blob/main/docs/LLaMA-model.md#option-1-pre-converted-weights).
+https://huggingface.co/Neko-Institute-of-Science/LLaMA-13B-4bit-128g
+
+https://huggingface.co/Neko-Institute-of-Science/LLaMA-30B-4bit-128g
+
+https://huggingface.co/Neko-Institute-of-Science/LLaMA-65B-4bit-128g
+
+These models were converted with `desc_act=True`. They work just fine with ExLlama. For AutoGPTQ, they will only work on Linux with the `triton` option checked.
+
+* Torrent:
+
+https://github.com/oobabooga/text-generation-webui/pull/530#issuecomment-1483891617
+
+https://github.com/oobabooga/text-generation-webui/pull/530#issuecomment-1483941105
+
+These models were converted with `desc_act=False`. As such, they are less accurate, but they work with AutoGPTQ on Windows. The `128g` versions are better from 13b upwards, and worse for 7b. The tokenizer files in the torrents are outdated, in particular the files called `tokenizer_config.json` and `special_tokens_map.json`. Here you can find those files: https://huggingface.co/oobabooga/llama-tokenizer
 
 ### Starting the web UI:
 

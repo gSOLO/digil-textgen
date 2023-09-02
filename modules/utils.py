@@ -2,9 +2,18 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Union
 
 from modules import shared
 from modules.logging_colors import logger
+
+
+# Helper function to get multiple values from shared.gradio
+def gradio(*keys):
+    if len(keys) == 1 and type(keys[0]) in [list, tuple]:
+        keys = keys[0]
+
+    return [shared.gradio[k] for k in keys]
 
 
 def save_file(fname, contents):
@@ -63,10 +72,12 @@ def natural_keys(text):
 
 
 def get_available_models():
-    if shared.args.flexgen:
-        return sorted([re.sub('-np$', '', item.name) for item in list(Path(f'{shared.args.model_dir}/').glob('*')) if item.name.endswith('-np')], key=natural_keys)
-    else:
-        return sorted([re.sub('.pth$', '', item.name) for item in list(Path(f'{shared.args.model_dir}/').glob('*')) if not item.name.endswith(('.txt', '-np', '.pt', '.json', '.yaml'))], key=natural_keys)
+    model_list = []
+    for item in list(Path(f'{shared.args.model_dir}/').glob('*')):
+        if not item.name.endswith(('.txt', '-np', '.pt', '.json', '.yaml', '.py')) and 'llama-tokenizer' not in item.name:
+            model_list.append(re.sub('.pth$', '', item.name))
+
+    return sorted(model_list, key=natural_keys)
 
 
 def get_available_presets():
@@ -78,18 +89,17 @@ def get_available_prompts():
     files = set((k.stem for k in Path('prompts').glob('*.txt')))
     prompts += sorted([k for k in files if re.match('^[0-9]', k)], key=natural_keys, reverse=True)
     prompts += sorted([k for k in files if re.match('^[^0-9]', k)], key=natural_keys)
-    prompts += ['Instruct-' + k for k in get_available_instruction_templates() if k != 'None']
     prompts += ['None']
     return prompts
 
 
 def get_available_characters():
     paths = (x for x in Path('characters').iterdir() if x.suffix in ('.json', '.yaml', '.yml'))
-    return ['None'] + sorted(set((k.stem for k in paths if k.stem != "instruction-following")), key=natural_keys)
+    return ['None'] + sorted(set((k.stem for k in paths)), key=natural_keys)
 
 
 def get_available_instruction_templates():
-    path = "characters/instruction-following"
+    path = "instruction-templates"
     paths = []
     if os.path.exists(path):
         paths = (x for x in Path(path).iterdir() if x.suffix in ('.json', '.yaml', '.yml'))
@@ -106,8 +116,24 @@ def get_available_loras():
 
 
 def get_datasets(path: str, ext: str):
+    # include subdirectories for raw txt files to allow training from a subdirectory of txt files
+    if ext == "txt":
+        return ['None'] + sorted(set([k.stem for k in list(Path(path).glob('txt')) + list(Path(path).glob('*/')) if k.stem != 'put-trainer-datasets-here']), key=natural_keys)
+
     return ['None'] + sorted(set([k.stem for k in Path(path).glob(f'*.{ext}') if k.stem != 'put-trainer-datasets-here']), key=natural_keys)
 
 
 def get_available_chat_styles():
     return sorted(set(('-'.join(k.stem.split('-')[1:]) for k in Path('css').glob('chat_style*.css'))), key=natural_keys)
+
+
+def is_gguf(path: Union[str, Path]) -> bool:
+    '''
+    Determines if a llama.cpp model is in GGUF format
+    Copied from ctransformers utils.py
+    '''
+    path = str(Path(path).resolve())
+    with open(path, "rb") as f:
+        magic = f.read(4)
+
+    return magic == "GGUF".encode()
