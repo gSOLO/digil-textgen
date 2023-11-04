@@ -7,7 +7,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import GenerationConfig, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from modules import RoPE, shared
+from modules import shared
 from modules.logging_colors import logger
 
 try:
@@ -77,17 +77,37 @@ class ExllamaHF(PreTrainedModel):
             seq = past_key_values + seq
 
         seq_tensor = torch.tensor(seq)
+        reset = True
 
         # Make the forward call
         if labels is None:
-            if past_seq is None or not torch.equal(past_seq, seq_tensor[:-1]):
-                ex_cache.current_seq_len = 0
-                self.ex_model.forward(torch.tensor([seq[:-1]], dtype=torch.long), ex_cache, preprocess_only=True, lora=self.lora)
+            if past_seq is not None:
+                min_length = min(past_seq.shape[0], seq_tensor.shape[0])
+                indices = torch.nonzero(~torch.eq(past_seq[:min_length], seq_tensor[:min_length]))
+                if len(indices) > 0:
+                    longest_prefix = indices[0].item()
+                else:
+                    longest_prefix = min_length
 
-            logits = self.ex_model.forward(torch.tensor([seq[-1:]], dtype=torch.long), ex_cache, lora=self.lora).to(input_ids.device)
+                if longest_prefix > 0:
+                    reset = False
+                    ex_cache.current_seq_len = longest_prefix
+                    if len(seq_tensor) - longest_prefix > 1:
+                        self.ex_model.forward(seq_tensor[longest_prefix:-1].view(1, -1), ex_cache, preprocess_only=True, lora=self.lora)
+                    elif len(seq_tensor) == longest_prefix:
+                        # Very tricky: if the prefix we are reusing *is* the input_ids, then we have to back up the cache pointer by one,
+                        # because we feed input_ids[-1] to forward() below, but that last token is already in the cache!
+                        ex_cache.current_seq_len -= 1
+
+            if reset:
+                ex_cache.current_seq_len = 0
+                if len(seq_tensor) > 1:
+                    self.ex_model.forward(seq_tensor[:-1].view(1, -1), ex_cache, preprocess_only=True, lora=self.lora)
+
+            logits = self.ex_model.forward(seq_tensor[-1:].view(1, -1), ex_cache, lora=self.lora).to(input_ids.device)
         else:
             ex_cache.current_seq_len = 0
-            logits = self.ex_model.forward(torch.tensor([seq], dtype=torch.long), ex_cache, last_id_only=False, lora=self.lora)
+            logits = self.ex_model.forward(seq_tensor.view(1, -1), ex_cache, last_id_only=False, lora=self.lora)
 
         if is_negative:
             self.past_seq_negative = seq_tensor
@@ -134,9 +154,11 @@ class ExllamaHF(PreTrainedModel):
             config.set_auto_map(shared.args.gpu_split)
             config.gpu_peer_fix = True
 
-        if shared.args.alpha_value > 1 or shared.args.rope_freq_base > 0:
-            config.alpha_value = RoPE.get_alpha_value(shared.args.alpha_value, shared.args.rope_freq_base)
+        if shared.args.alpha_value > 1 and shared.args.rope_freq_base == 0:
+            config.alpha_value = shared.args.alpha_value
             config.calculate_rotary_embedding_base()
+        elif shared.args.rope_freq_base > 0:
+            config.rotary_embedding_base = shared.args.rope_freq_base
 
         if torch.version.hip:
             config.rmsnorm_no_half2 = True
