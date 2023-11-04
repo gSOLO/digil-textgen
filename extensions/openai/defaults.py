@@ -10,6 +10,8 @@ default_req_params = {
     'top_p': 1.0,
     'top_k': 1,  # choose 20 for chat in absence of another default
     'repetition_penalty': 1.18,
+    'presence_penalty': 0,
+    'frequency_penalty': 0,
     'repetition_penalty_range': 0,
     'encoder_repetition_penalty': 1.0,
     'suffix': None,
@@ -34,9 +36,11 @@ default_req_params = {
     'mirostat_mode': 0,
     'mirostat_tau': 5.0,
     'mirostat_eta': 0.1,
+    'grammar_string': '',
     'guidance_scale': 1,
     'negative_prompt': '',
     'ban_eos_token': False,
+    'custom_token_bans': '',
     'skip_special_tokens': True,
     'custom_stopping_strings': '',
     # 'logits_processor' - conditionally passed
@@ -49,10 +53,13 @@ default_req_params = {
 def get_default_req_params():
     return copy.deepcopy(default_req_params)
 
-# little helper to get defaults if arg is present but None and should be the same type as default.
+
 def default(dic, key, default):
+    '''
+    little helper to get defaults if arg is present but None and should be the same type as default.
+    '''
     val = dic.get(key, default)
-    if type(val) != type(default):
+    if not isinstance(val, type(default)):
         # maybe it's just something like 1 instead of 1.0
         try:
             v = type(default)(val)

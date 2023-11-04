@@ -16,6 +16,8 @@ def default_preset():
         'tfs': 1,
         'top_a': 0,
         'repetition_penalty': 1,
+        'presence_penalty': 0,
+        'frequency_penalty': 0,
         'repetition_penalty_range': 0,
         'encoder_repetition_penalty': 1,
         'no_repeat_ngram_size': 0,
@@ -28,6 +30,7 @@ def default_preset():
         'num_beams': 1,
         'length_penalty': 1,
         'early_stopping': False,
+        'custom_token_bans': '',
     }
 
 

@@ -2,9 +2,8 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Union
 
-from modules import shared
+from modules import github, shared
 from modules.logging_colors import logger
 
 
@@ -72,7 +71,7 @@ def natural_keys(text):
 
 
 def get_available_models():
-    model_list = []
+    model_list = ['None']
     for item in list(Path(f'{shared.args.model_dir}/').glob('*')):
         if not item.name.endswith(('.txt', '-np', '.pt', '.json', '.yaml', '.py')) and 'llama-tokenizer' not in item.name:
             model_list.append(re.sub('.pth$', '', item.name))
@@ -95,7 +94,7 @@ def get_available_prompts():
 
 def get_available_characters():
     paths = (x for x in Path('characters').iterdir() if x.suffix in ('.json', '.yaml', '.yml'))
-    return ['None'] + sorted(set((k.stem for k in paths)), key=natural_keys)
+    return sorted(set((k.stem for k in paths)), key=natural_keys)
 
 
 def get_available_instruction_templates():
@@ -108,11 +107,13 @@ def get_available_instruction_templates():
 
 
 def get_available_extensions():
-    return sorted(set(map(lambda x: x.parts[1], Path('extensions').glob('*/script.py'))), key=natural_keys)
+    extensions = sorted(set(map(lambda x: x.parts[1], Path('extensions').glob('*/script.py'))), key=natural_keys)
+    extensions = [v for v in extensions if v not in github.new_extensions]
+    return extensions
 
 
 def get_available_loras():
-    return sorted([item.name for item in list(Path(shared.args.lora_dir).glob('*')) if not item.name.endswith(('.txt', '-np', '.pt', '.json'))], key=natural_keys)
+    return ['None'] + sorted([item.name for item in list(Path(shared.args.lora_dir).glob('*')) if not item.name.endswith(('.txt', '-np', '.pt', '.json'))], key=natural_keys)
 
 
 def get_datasets(path: str, ext: str):
@@ -127,13 +128,5 @@ def get_available_chat_styles():
     return sorted(set(('-'.join(k.stem.split('-')[1:]) for k in Path('css').glob('chat_style*.css'))), key=natural_keys)
 
 
-def is_gguf(path: Union[str, Path]) -> bool:
-    '''
-    Determines if a llama.cpp model is in GGUF format
-    Copied from ctransformers utils.py
-    '''
-    path = str(Path(path).resolve())
-    with open(path, "rb") as f:
-        magic = f.read(4)
-
-    return magic == "GGUF".encode()
+def get_available_grammars():
+    return ['None'] + sorted([item.name for item in list(Path('grammars').glob('*.gbnf'))], key=natural_keys)

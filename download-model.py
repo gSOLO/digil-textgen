@@ -22,6 +22,9 @@ from requests.adapters import HTTPAdapter
 from tqdm.contrib.concurrent import thread_map
 
 
+base = "https://huggingface.co"
+
+
 class ModelDownloader:
     def __init__(self, max_retries=5):
         self.session = requests.Session()
@@ -37,6 +40,13 @@ class ModelDownloader:
         if model[-1] == '/':
             model = model[:-1]
 
+        if model.startswith(base + '/'):
+            model = model[len(base) + 1:]
+
+        model_parts = model.split(":")
+        model = model_parts[0] if len(model_parts) > 0 else model
+        branch = model_parts[1] if len(model_parts) > 1 else branch
+
         if branch is None:
             branch = "main"
         else:
@@ -48,7 +58,6 @@ class ModelDownloader:
         return model, branch
 
     def get_download_links_from_huggingface(self, model, branch, text_only=False, specific_file=None):
-        base = "https://huggingface.co"
         page = f"/api/models/{model}/tree/{branch}"
         cursor = b""
 
@@ -58,7 +67,6 @@ class ModelDownloader:
         has_pytorch = False
         has_pt = False
         has_gguf = False
-        has_ggml = False
         has_safetensors = False
         is_lora = False
         while True:
@@ -83,10 +91,10 @@ class ModelDownloader:
                 is_safetensors = re.match(r".*\.safetensors", fname)
                 is_pt = re.match(r".*\.pt", fname)
                 is_gguf = re.match(r'.*\.gguf', fname)
-                is_ggml = re.match(r".*ggml.*\.bin", fname)
-                is_tokenizer = re.match(r"(tokenizer|ice|spiece).*\.model", fname)
+                is_tiktoken = re.match(r".*\.tiktoken", fname)
+                is_tokenizer = re.match(r"(tokenizer|ice|spiece).*\.model", fname) or is_tiktoken
                 is_text = re.match(r".*\.(txt|json|py|md)", fname) or is_tokenizer
-                if any((is_pytorch, is_safetensors, is_pt, is_gguf, is_ggml, is_tokenizer, is_text)):
+                if any((is_pytorch, is_safetensors, is_pt, is_gguf, is_tokenizer, is_text)):
                     if 'lfs' in dict[i]:
                         sha256.append([fname, dict[i]['lfs']['oid']])
 
@@ -109,9 +117,6 @@ class ModelDownloader:
                         elif is_gguf:
                             has_gguf = True
                             classifications.append('gguf')
-                        elif is_ggml:
-                            has_ggml = True
-                            classifications.append('ggml')
 
             cursor = base64.b64encode(f'{{"file_name":"{dict[-1]["path"]}"}}'.encode()) + b':50'
             cursor = base64.b64encode(cursor)
@@ -123,19 +128,19 @@ class ModelDownloader:
                 if classifications[i] in ['pytorch', 'pt']:
                     links.pop(i)
 
-        # If both GGML and GGUF are available, download GGUF only
-        if has_ggml and has_gguf:
+        if has_gguf and specific_file is None:
             for i in range(len(classifications) - 1, -1, -1):
-                if classifications[i] == 'ggml':
+                if 'q4_k_m' not in links[i].lower():
                     links.pop(i)
 
-        return links, sha256, is_lora, ((has_ggml or has_gguf) and specific_file is not None)
+        is_llamacpp = has_gguf and specific_file is not None
+        return links, sha256, is_lora, is_llamacpp
 
     def get_output_folder(self, model, branch, is_lora, is_llamacpp=False, base_folder=None):
         if base_folder is None:
             base_folder = 'models' if not is_lora else 'loras'
 
-        # If the model is of type GGUF or GGML, save directly in the base_folder
+        # If the model is of type GGUF, save directly in the base_folder
         if is_llamacpp:
             return Path(base_folder)
 
@@ -167,8 +172,22 @@ class ModelDownloader:
             r.raise_for_status()  # Do not continue the download if the request was unsuccessful
             total_size = int(r.headers.get('content-length', 0))
             block_size = 1024 * 1024  # 1MB
+
+            tqdm_kwargs = {
+                'total': total_size,
+                'unit': 'iB',
+                'unit_scale': True,
+                'bar_format': '{l_bar}{bar}| {n_fmt:6}/{total_fmt:6} {rate_fmt:6}'
+            }
+
+            if 'COLAB_GPU' in os.environ:
+                tqdm_kwargs.update({
+                    'position': 0,
+                    'leave': True
+                })
+
             with open(output_path, mode) as f:
-                with tqdm.tqdm(total=total_size, unit='iB', unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt:6}/{total_fmt:6} {rate_fmt:6}') as t:
+                with tqdm.tqdm(**tqdm_kwargs) as t:
                     count = 0
                     for data in r.iter_content(block_size):
                         t.update(len(data))
@@ -177,10 +196,10 @@ class ModelDownloader:
                             count += len(data)
                             self.progress_bar(float(count) / float(total_size), f"{filename}")
 
-    def start_download_threads(self, file_list, output_folder, start_from_scratch=False, threads=1):
+    def start_download_threads(self, file_list, output_folder, start_from_scratch=False, threads=4):
         thread_map(lambda url: self.get_single_file(url, output_folder, start_from_scratch=start_from_scratch), file_list, max_workers=threads, disable=True)
 
-    def download_model_files(self, model, branch, links, sha256, output_folder, progress_bar=None, start_from_scratch=False, threads=1, specific_file=None, is_llamacpp=False):
+    def download_model_files(self, model, branch, links, sha256, output_folder, progress_bar=None, start_from_scratch=False, threads=4, specific_file=None, is_llamacpp=False):
         self.progress_bar = progress_bar
 
         # Create the folder and writing the metadata
@@ -217,8 +236,7 @@ class ModelDownloader:
                 continue
 
             with open(output_folder / sha256[i][0], "rb") as f:
-                bytes = f.read()
-                file_hash = hashlib.sha256(bytes).hexdigest()
+                file_hash = hashlib.file_digest(f, "sha256").hexdigest()
                 if file_hash != sha256[i][1]:
                     print(f'Checksum failed: {sha256[i][0]}  {sha256[i][1]}')
                     validated = False
@@ -236,7 +254,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('MODEL', type=str, default=None, nargs='?')
     parser.add_argument('--branch', type=str, default='main', help='Name of the Git branch to download from.')
-    parser.add_argument('--threads', type=int, default=1, help='Number of files to download simultaneously.')
+    parser.add_argument('--threads', type=int, default=4, help='Number of files to download simultaneously.')
     parser.add_argument('--text-only', action='store_true', help='Only download text files (txt/json).')
     parser.add_argument('--specific-file', type=str, default=None, help='Name of the specific file to download (if not provided, downloads all).')
     parser.add_argument('--output', type=str, default=None, help='The folder where the model should be saved.')
